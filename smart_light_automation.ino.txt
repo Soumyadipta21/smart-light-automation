@@ -1,0 +1,81 @@
+/*
+  Smart Light Automation System
+  Arduino Uno/Nano + Ultrasonic Sensor (HC-SR04) + Relay/LED
+
+  Logic:
+  - Ultrasonic sensor continuously measures distance
+  - Person within range -> light turns ON immediately
+  - Person leaves        -> light stays ON for 30 more seconds before
+                             turning OFF, avoiding flicker from brief movement
+  - Sleep Mode: a physical switch disables automation entirely, forcing
+    the light OFF regardless of sensor readings (manual override)
+
+  Wiring notes:
+  - trigPin/echoPin -> HC-SR04 ultrasonic sensor
+  - lightPin        -> relay module or LED controlling the actual light
+  - sleepPin        -> switch to GND enables sleep mode (uses internal pull-up)
+  - Adjust detectionRange (cm) based on your room size
+*/
+
+const int trigPin   = 9;
+const int echoPin   = 10;
+const int lightPin  = 8;      // relay or LED controlling the light
+const int sleepPin  = 7;      // switch: connect to GND to enable sleep mode
+
+const int detectionRange = 100;         // cm, adjust based on room size
+const unsigned long offDelay = 30000;   // 30 seconds
+
+bool lightState = false;
+unsigned long lastDetectedTime = 0;
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+  pinMode(lightPin, OUTPUT);
+  pinMode(sleepPin, INPUT_PULLUP);   // switch to GND = sleep mode ON
+
+  digitalWrite(lightPin, LOW);
+}
+
+void loop() {
+  bool sleepMode = (digitalRead(sleepPin) == LOW);
+
+  if (sleepMode) {
+    // Sleep mode overrides everything - light forced OFF
+    setLight(false);
+    return;
+  }
+
+  long distance = getDistanceCM();
+  bool personPresent = (distance > 0 && distance <= detectionRange);
+
+  if (personPresent) {
+    lastDetectedTime = millis();
+    setLight(true);
+  } else if (lightState && (millis() - lastDetectedTime >= offDelay)) {
+    // Grace period expired with no detection - turn off
+    setLight(false);
+  }
+}
+
+long getDistanceCM() {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  long duration = pulseIn(echoPin, HIGH, 30000); // 30ms timeout
+  if (duration == 0) return -1;                  // no echo received
+
+  long distance = duration * 0.034 / 2;           // convert to cm
+  return distance;
+}
+
+void setLight(bool state) {
+  if (state != lightState) {
+    digitalWrite(lightPin, state ? HIGH : LOW);
+    lightState = state;
+  }
+}
